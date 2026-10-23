@@ -122,6 +122,8 @@
   #
   # When null (default), the vendored buildRustCrate is used as-is.
   buildRustCrateForPkgs ? null,
+  # Optional Cargo profile. Null retains legacy behavior.
+  profile ? null,
   # Optional: path to CARGO_HOME for registry index lookup in lockfile
   # resolve mode. Defaults to $CARGO_HOME or ~/.cargo.
   cargoHome ? null,
@@ -310,15 +312,24 @@ let
   # resolved via `cratePkgs.buildPackages` (build scripts, proc-macros,
   # their closures). Detected via `lib.functionArgs`, so callers without
   # the arg keep the 2-ary shape and drvPaths. Mirrors crate2nix PR #481.
+  cargoProfile = if profile == null then null else
+    (import ./cargo-profile.nix { nixpkgs = pkgs; }).mkCargoFlags {
+      cargoToml = if manifestPath != null then manifestPath else src + "/Cargo.toml";
+      inherit profile;
+    };
+
   effectiveBuildRustCrateForPkgs =
-    if buildRustCrateForPkgs != null then
-      cratePkgs: isHost:
-      let
-        userFn = buildRustCrateForPkgs cratePkgs (defaultBuildRustCrateForPkgs cratePkgs);
-      in
-      if (lib.functionArgs userFn) ? isHost then userFn { inherit isHost; } else userFn
-    else
-      cratePkgs: _isHost: defaultBuildRustCrateForPkgs cratePkgs;
+    cratePkgs: isHost:
+    let
+      base = defaultBuildRustCrateForPkgs cratePkgs;
+      userFn = if buildRustCrateForPkgs == null then base else
+        let f = buildRustCrateForPkgs cratePkgs base;
+        in if (lib.functionArgs f) ? isHost then f { inherit isHost; } else f;
+    in if cargoProfile == null then userFn else args:
+      userFn (cargoProfile.forCrate {
+        inherit isHost;
+        rustcTargetSpec = cratePkgs.stdenv.hostPlatform.rust.rustcTargetSpec or resolvedTarget.name;
+      } args);
 
   # Call the plugin builtin — auto-detect mode based on metadata presence
   resolved = apiLevelGuard builtins.resolveCargoWorkspace (
