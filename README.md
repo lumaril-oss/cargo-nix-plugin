@@ -440,3 +440,21 @@ bug or accepting every feature request. For security issues, see
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
+
+
+## Experimental Cargo profile selection
+
+The Nix library wrapper accepts an optional `profile` argument. If omitted,
+existing builds are unchanged. For example:
+
+```nix
+cargoNix = cargo-nix-plugin.lib { inherit pkgs; src = ./.; profile = "ci"; };
+```
+
+The profile is read from the workspace `Cargo.toml` and resolved through
+`inherits`, including per-package overrides. The compiler-flag adapter is
+adapted from [nix-cargo-flags](https://github.com/lumaril/nix-cargo-flags).
+Only release-rooted profiles are currently supported, because the builder
+compiles in release mode. This first draft does not reproduce every Cargo
+build-unit distinction and needs integration validation for LTO and host units.
+A pure evaluation regression fixture is in `tests/profile-eval.nix`.
