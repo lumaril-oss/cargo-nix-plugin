@@ -98,6 +98,21 @@ pkgs.runCommand "cargo-nix-plugin-sample-build-test"
     jq -e -s 'any(.[]; .level == "warning")' "$clippy_report/sample-lib.jsonl" > /dev/null
     echo "PASS: cached clippy report retained JSON diagnostics"
 
+    # Metadata-only checks still lint the root library: sample-lib's
+    # intentional warning must reach both reports.
+    for attr in check checkTests; do
+      check_drv=$(nix-instantiate \
+        --option plugin-files "${plugin}/lib/nix/plugins" \
+        --expr "($cargoNixExpr).clippy.workspaceMembers.sample-lib.$attr")
+      check_out=$(nix-store --realize "$check_drv")
+      jq -e -s 'any(.[]; .code.code == "clippy::useless_format")' \
+        "$check_out/share/cargo-nix/clippy-diagnostics.jsonl" > /dev/null || {
+        echo "FAIL: clippy.workspaceMembers.sample-lib.$attr lost the root lib's lint"
+        exit 1
+      }
+    done
+    echo "PASS: metadata checks lint the root library"
+
     # reportCheck must fail because sample-lib carries an intentional
     # clippy::useless_format warning.
     clippy_check_drv=$(nix-instantiate \
